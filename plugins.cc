@@ -22,6 +22,8 @@
     - email    : powturbo [_AT_] gmail [_DOT_] com
 **/
 //      TurboBench: plugins.cc - compressor plugins
+#include <assert.h>
+#include <unistd.h>
 enum {
 #define _MEMCPY 1
  P_LMCPY,   // must be 0
@@ -486,7 +488,76 @@ static size_t cscwrite(MemISeqOutStream *so, const void *out, size_t outlen) {
   #endif
 
   #if _HEATSHRINK
-#include "heatshrink_/heatshrink.h"
+#include "heatshrink/heatshrink_common.h"
+#include "heatshrink/heatshrink_encoder.h"
+#include "heatshrink/heatshrink_decoder.h"
+static int hsencode(unsigned char *input, int input_size, unsigned char *comp, int comp_size, uint8_t window_sz2, uint8_t lookahead_sz2) {
+    heatshrink_encoder *hse = heatshrink_encoder_alloc(window_sz2, lookahead_sz2);
+    size_t sunk = 0;
+    size_t polled = 0;
+    size_t count = 0;
+    while (sunk < input_size) {
+        HSE_sink_res esres = heatshrink_encoder_sink(hse, &input[sunk], input_size - sunk, &count);
+        assert(esres >= 0);
+        sunk += count;
+        //if (cfg->log_lvl > 1) printf("^^ sunk %zd\n", count);
+        if (sunk == input_size) {
+            //assert(HSER_FINISH_MORE == heatshrink_encoder_finish(hse));
+            heatshrink_encoder_finish(hse);
+        }
+
+        HSE_poll_res pres;
+        do {                    /* "turn the crank" */
+            pres = heatshrink_encoder_poll(hse, &comp[polled], comp_size - polled, &count);
+            assert(pres >= 0);
+            polled += count;
+            //if (cfg->log_lvl > 1) printf("^^ polled %zd\n", count);
+        } while (pres == HSER_POLL_MORE);
+        assert(HSER_POLL_EMPTY == pres);
+        //if (polled >= comp_size) FAILm("compression should never expand that much");
+        if (sunk == input_size) {
+            //assert(HSER_FINISH_DONE == heatshrink_encoder_finish(hse));
+            heatshrink_encoder_finish(hse);
+        }
+    }
+    heatshrink_encoder_free(hse);
+    return polled;
+}
+
+static int hsdecode(unsigned char *comp, int comp_size, unsigned char *decomp, int decomp_size, uint8_t window_sz2, uint8_t lookahead_sz2) {
+    heatshrink_decoder *hsd = heatshrink_decoder_alloc(comp_size, window_sz2, lookahead_sz2);
+    size_t sunk = 0;
+    size_t polled = 0;
+    size_t count = 0;
+    HSD_sink_res sres;
+    while (sunk < comp_size) {
+        sres = heatshrink_decoder_sink(hsd, &comp[sunk], comp_size - sunk, &count);
+        //assert(sres >= 0);
+        if(sres < 0) {return -1;}
+        sunk += count;
+        if (sunk == comp_size) {
+            //assert(HSDR_FINISH_MORE == heatshrink_decoder_finish(hsd));
+            if( HSDR_FINISH_MORE != heatshrink_decoder_finish(hsd) ) {return -1;}
+        }
+
+        HSD_poll_res pres;
+        do {
+            // Is there an internal off-by-one error in heatshrink?
+            pres = heatshrink_decoder_poll(hsd, &decomp[polled],
+                decomp_size - polled + 1, &count);
+            polled += count;
+        } while (pres == HSDR_POLL_MORE);
+
+        assert(HSDR_POLL_EMPTY == pres);
+        if (sunk == comp_size) {
+            HSD_finish_res fres = heatshrink_decoder_finish(hsd);
+            if(HSDR_FINISH_DONE != fres) { return -1;}
+        }
+    }
+    heatshrink_decoder_free(hsd);
+    //sleep(1);
+    return polled;
+}
   #endif
 
   #if _IGZIP
@@ -1356,7 +1427,11 @@ int codcomp(unsigned char *in, int inlen, unsigned char *out, int outsize, int c
       #endif
 
       #if _HEATSHRINK
-    case P_HEATSHRINK:   return hscompress(in, inlen, out);
+    case P_HEATSHRINK: {
+        uint8_t window_sz2 = 10;
+        uint8_t lookahead_sz2 = 6;
+        return hsencode(in, inlen, out, outsize, window_sz2, lookahead_sz2);
+      }
       #endif
 
 
@@ -2075,7 +2150,12 @@ int coddecomp(unsigned char *in, int inlen, unsigned char *out, int outlen, int 
       #endif
 
       #if _HEATSHRINK
-    case P_HEATSHRINK: return hsdecompress(in, inlen, out, outlen);
+    case P_HEATSHRINK: {
+        uint8_t window_sz2 = 10;
+        uint8_t lookahead_sz2 = 6;
+        hsdecode(in, inlen, out, outlen, window_sz2, lookahead_sz2);
+        break;
+      }
       #endif
 
       #if _IGZIP
