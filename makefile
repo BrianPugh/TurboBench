@@ -27,7 +27,7 @@ FLZMA2=1
 LIBDEFLATE=1
 #GIPFELI=1
 GLZA=1
-#HEATSHRINK=1
+HEATSHRINK=1
 #IGZIP=1
 LIBBSC=1
 #LIBZLING=1
@@ -617,7 +617,7 @@ endif
 
 ifeq ($(HEATSHRINK),1)
 CXXFLAGS+=-D_HEATSHRINK
-OB+=heatshrink_/heatshrink.o heatshrink/heatshrink_encoder.o heatshrink/heatshrink_decoder.o
+OB+=heatshrink/heatshrink_encoder.o heatshrink/heatshrink_decoder.o
 endif
 
 ifeq ($(LIBLZF),1)

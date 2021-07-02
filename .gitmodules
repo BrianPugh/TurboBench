@@ -79,3 +79,6 @@
 [submodule "Turbo-Run-Length-Encoding"]
 	path = Turbo-Run-Length-Encoding
 	url = https://github.com/powturbo/Turbo-Run-Length-Encoding.git
+[submodule "heatshrink"]
+	path = heatshrink
+	url = git@github.com:BrianPugh/heatshrink.git
