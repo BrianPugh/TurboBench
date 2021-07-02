@@ -555,7 +555,6 @@ static int hsdecode(unsigned char *comp, int comp_size, unsigned char *decomp, i
         }
     }
     heatshrink_decoder_free(hsd);
-    //sleep(1);
     return polled;
 }
   #endif
